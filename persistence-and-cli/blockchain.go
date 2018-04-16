@@ -5,9 +5,9 @@ import (
 	"github.com/boltdb/bolt"
 )
 
-const db_file = "blockchain.db"
-const blocks_bucket = "blocks"
-const last_hash = "last_hash"
+const dbFile = "blockchain.db"
+const blocksBucket = "blocks"
+const lastHash = "last_hash"
 
 // Blockchain 是一个 Block 指针数组
 type Blockchain struct {
@@ -23,17 +23,17 @@ type BlockchainIterator struct {
 // NewBlockchain 创建一个有创世块的链
 func NewBlockchain() *Blockchain {
 	var lastHash []byte
-	db, err := bolt.Open(db_file, 0600, nil)
+	db, err := bolt.Open(dbFile, 0600, nil)
 	if err != nil {
 		log.Panic(err)
 	}
 
 	err = db.Update(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte(blocks_bucket))
+		bucket := tx.Bucket([]byte(blocksBucket))
 
 		if bucket == nil {
 			genisis := NewGenesisBlock()
-			bucket, err := tx.CreateBucket([]byte(blocks_bucket))
+			bucket, err := tx.CreateBucket([]byte(blocksBucket))
 			if err != nil {
 				log.Panic(err)
 			}
@@ -42,14 +42,14 @@ func NewBlockchain() *Blockchain {
 			if err != nil {
 				log.Panic(err)
 			}
-			err = bucket.Put([]byte(last_hash), genisis.Hash)
+			err = bucket.Put([]byte(lastHash), genisis.Hash)
 
 			if err != nil {
 				log.Panic(err)
 			}
 			lastHash = genisis.Hash
 		} else {
-			lastHash = bucket.Get([]byte(last_hash))
+			lastHash = bucket.Get([]byte(lastHash))
 		}
 
 		return nil
@@ -64,8 +64,8 @@ func (blockchain *Blockchain) AddBlock(data string) {
 	var lastHash []byte
 
 	err := blockchain.db.View(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte(blocks_bucket))
-		lastHash = bucket.Get([]byte(last_hash))
+		bucket := tx.Bucket([]byte(blocksBucket))
+		lastHash = bucket.Get([]byte(lastHash))
 		return nil
 	})
 	if err != nil {
@@ -75,13 +75,13 @@ func (blockchain *Blockchain) AddBlock(data string) {
 	newBlock := NewBlock(data, lastHash)
 
 	err = blockchain.db.Update(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte(blocks_bucket))
+		bucket := tx.Bucket([]byte(blocksBucket))
 		err := bucket.Put(newBlock.Hash, newBlock.Serialize())
 		if err != nil {
 			log.Panic(err)
 		}
 
-		err = bucket.Put([]byte(last_hash), newBlock.Hash)
+		err = bucket.Put([]byte(lastHash), newBlock.Hash)
 		if err != nil {
 			log.Panic(err)
 		}
@@ -99,7 +99,7 @@ func (iterator *BlockchainIterator) Next() *Block {
 	var block *Block
 
 	err := iterator.db.View(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte(blocks_bucket))
+		bucket := tx.Bucket([]byte(blocksBucket))
 		encodedBlock := bucket.Get(iterator.currentHash)
 		block = DeserializeBlock(encodedBlock)
 		return nil
@@ -110,4 +110,10 @@ func (iterator *BlockchainIterator) Next() *Block {
 
 	iterator.currentHash = block.PreviousBlockHash
 	return block
+}
+
+func (blockchain *Blockchain) FindSpendableOutputs(address string, account int) (int, map[string][]int) {
+	accumulated := 0
+	unspentOutputs := make(map[string][]int)
+	return accumulated, unspentOutputs
 }
