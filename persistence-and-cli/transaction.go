@@ -64,7 +64,7 @@ func (transactionOutput *TransactionOutput) CanBeUnlockedWith(unlockingData stri
 	return transactionOutput.ScriptPubKey == unlockingData
 }
 
-func CreateUTXOTransaction(from, to string, amount int, blockchain *Blockchain) *Transaction {
+func NewUTXOTransaction(from, to string, amount int, blockchain *Blockchain) *Transaction {
 	var inputs []TransactionInput
 	var outputs []TransactionOutput
 

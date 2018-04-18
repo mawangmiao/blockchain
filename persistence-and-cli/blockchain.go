@@ -3,13 +3,17 @@ package main
 import (
 	"log"
 	"github.com/boltdb/bolt"
+	"os"
+	"fmt"
+	"encoding/hex"
 )
 
-const dbFile = "blockchain.db"
-const blocksBucket = "blocks"
-const lastHash = "last_hash"
+const DB_FILE = "blockchain.db"
+const BLOCKS_BUCKET = "blocks"
+const LAST_HASH = "last_hash"
+const GENESIS_CORNBASE_DATA = "阿森纳淘汰了马竞"
 
-// Blockchain 是一个 Block 指针数组
+// Blockchain 是一个 NewBlock 指针数组
 type Blockchain struct {
 	lastHash []byte
 	db       *bolt.DB
@@ -20,37 +24,74 @@ type BlockchainIterator struct {
 	db          *bolt.DB
 }
 
-// NewBlockchain 创建一个有创世块的链
+func dbExists() bool {
+	if _, err := os.Stat(DB_FILE); os.IsNotExist(err) {
+		return false
+	}
+
+	return true
+}
+
+// 创建一个有创世块的新链
 func NewBlockchain() *Blockchain {
+	if dbExists() == false {
+		fmt.Println("出错了, 区块链尚未初始化, 无法创建新区块")
+		os.Exit(1)
+	}
 	var lastHash []byte
-	db, err := bolt.Open(dbFile, 0600, nil)
+	db, err := bolt.Open(DB_FILE, 0600, nil)
 	if err != nil {
 		log.Panic(err)
 	}
 
 	err = db.Update(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte(blocksBucket))
+		bucket := tx.Bucket([]byte(BLOCKS_BUCKET))
+		lastHash = bucket.Get([]byte(LAST_HASH))
 
-		if bucket == nil {
-			genisis := NewGenesisBlock()
-			bucket, err := tx.CreateBucket([]byte(blocksBucket))
-			if err != nil {
-				log.Panic(err)
-			}
+		return nil
+	})
 
-			err = bucket.Put(genisis.Hash, genisis.Serialize())
-			if err != nil {
-				log.Panic(err)
-			}
-			err = bucket.Put([]byte(lastHash), genisis.Hash)
+	if err != nil {
+		log.Panic(err)
+	}
 
-			if err != nil {
-				log.Panic(err)
-			}
-			lastHash = genisis.Hash
-		} else {
-			lastHash = bucket.Get([]byte(lastHash))
+	bc := Blockchain{lastHash, db}
+
+	return &bc
+}
+
+// 创建一个新的区块链数据库
+func InitBlockchain(address string) *Blockchain {
+	if dbExists() {
+		fmt.Println("出错了, 不能重复初始化区块链")
+		os.Exit(1)
+	}
+
+	var lastHash []byte
+	db, err := bolt.Open(DB_FILE, 0600, nil)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	err = db.Update(func(tx *bolt.Tx) error {
+		coinbaseTransaction := CreateCoinbaseTransaction(address, GENESIS_CORNBASE_DATA)
+		genisis := NewGenesisBlock(coinbaseTransaction)
+
+		bucket, err := tx.CreateBucket([]byte(BLOCKS_BUCKET))
+		if err != nil {
+			log.Panic(err)
 		}
+
+		err = bucket.Put(genisis.Hash, genisis.Serialize())
+		if err != nil {
+			log.Panic(err)
+		}
+
+		err = bucket.Put([]byte(LAST_HASH), genisis.Hash)
+		if err != nil {
+			log.Panic(err)
+		}
+		lastHash = genisis.Hash
 
 		return nil
 	})
@@ -58,13 +99,13 @@ func NewBlockchain() *Blockchain {
 	return &Blockchain{lastHash, db}
 }
 
-// AddBlock 向链中加入一个新块
+// MineBlock 向链中加入一个新块
 // Data 在实际中就是交易
-func (blockchain *Blockchain) AddBlock(data string) {
+func (blockchain *Blockchain) MineBlock(transactions []*Transaction) {
 	var lastHash []byte
 
 	err := blockchain.db.View(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte(blocksBucket))
+		bucket := tx.Bucket([]byte(BLOCKS_BUCKET))
 		lastHash = bucket.Get([]byte(lastHash))
 		return nil
 	})
@@ -72,10 +113,10 @@ func (blockchain *Blockchain) AddBlock(data string) {
 		log.Panic(err)
 	}
 
-	newBlock := NewBlock(data, lastHash)
+	newBlock := NewBlock(transactions, lastHash)
 
 	err = blockchain.db.Update(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte(blocksBucket))
+		bucket := tx.Bucket([]byte(BLOCKS_BUCKET))
 		err := bucket.Put(newBlock.Hash, newBlock.Serialize())
 		if err != nil {
 			log.Panic(err)
@@ -99,7 +140,7 @@ func (iterator *BlockchainIterator) Next() *Block {
 	var block *Block
 
 	err := iterator.db.View(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte(blocksBucket))
+		bucket := tx.Bucket([]byte(BLOCKS_BUCKET))
 		encodedBlock := bucket.Get(iterator.currentHash)
 		block = DeserializeBlock(encodedBlock)
 		return nil
@@ -116,4 +157,52 @@ func (blockchain *Blockchain) FindSpendableOutputs(address string, account int) 
 	accumulated := 0
 	unspentOutputs := make(map[string][]int)
 	return accumulated, unspentOutputs
+}
+
+func (blockchain *Blockchain) FindUnspentTransactions(address string) []Transaction {
+	var unspentTransactions []Transaction
+	mapSpentTransactionOutputIndex := make(map[string][]int)
+	iterator := blockchain.Iterator()
+
+	for {
+		block := iterator.Next() //从最后一个区块, 从上往下遍历. 所以最后一块包含的输出肯定没花过??
+
+		for _, transaction := range block.Transactions {
+			encodedTransactionID := hex.EncodeToString(transaction.ID)
+
+			//先看下当前交易中哪些输出可以被address花
+		Outputs:
+			for index, output := range transaction.Outputs {
+				//首先检查当前输出是否已经花掉了
+				if mapSpentTransactionOutputIndex[encodedTransactionID] != nil {
+					for _, spentOutputIndex := range mapSpentTransactionOutputIndex[encodedTransactionID] {
+						if spentOutputIndex == index { //当前outputIndex出现在已花费的outputIndex数组中, 所以当前输出已经被花掉
+							continue Outputs
+						}
+					}
+				}
+
+				//如果当前输出没有被花掉, 而address又能解锁该输出, 那么就找到一笔address能花的交易
+				if output.CanBeUnlockedWith(address) {
+					unspentTransactions = append(unspentTransactions, *transaction)
+				}
+			}
+
+			//再看下当前交易中哪些输入是被address花过的, 将相关信息(交易id, 输出的index)存起来. 等到遍历下一个区块时, 可以用来判断区块中的交易输出是否花了
+			if transaction.IsCoinbaseTransaction() == false {
+				for _, input := range transaction.Inputs {
+					if input.CanUnlockOutputWith(address) { //谁有权解锁该输入, 就说明这笔钱已经被谁花掉了
+						encodedPreviousTransactionID := hex.EncodeToString(input.PreviousTransactionID)
+						mapSpentTransactionOutputIndex[encodedPreviousTransactionID] = append(mapSpentTransactionOutputIndex[encodedPreviousTransactionID], input.OutputIndexInPreviousTransaction)
+					}
+				}
+			}
+
+		}
+
+		if len(block.PreviousBlockHash) == 0 {
+			break
+		}
+	}
+	return unspentTransactions
 }

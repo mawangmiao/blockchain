@@ -25,7 +25,7 @@ func NewProofOfWork(block *Block) *ProofOfWork {
 
 func (pow *ProofOfWork) PrepareData(nonce int) []byte {
 	data := bytes.Join(
-		[][]byte{pow.block.PreviousBlockHash, pow.block.Data, IntToHex(pow.block.Timestamp), IntToHex(int64(targetBits)), IntToHex(int64(nonce))},
+		[][]byte{pow.block.PreviousBlockHash, pow.block.HashTransactions(), IntToHex(pow.block.Timestamp), IntToHex(int64(targetBits)), IntToHex(int64(nonce))},
 		[]byte{})
 	return data
 }
@@ -35,7 +35,7 @@ func (pow *ProofOfWork) Run() (int, []byte) {
 	var hash [32]byte
 	nonce := 0
 
-	fmt.Printf("开始挖矿, 数据为 \"%s\" %s\n", pow.block.Data, time.Now().Format("2006-01-02 15:04:05.000"))
+	fmt.Printf("开始挖矿, %s\n", time.Now().Format("2006-01-02 15:04:05.000"))
 	for nonce < math.MaxInt64 {
 		data := pow.PrepareData(nonce)
 		hash = sha256.Sum256(data)

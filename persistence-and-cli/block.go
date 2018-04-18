@@ -6,9 +6,10 @@ import (
 	"bytes"
 	"encoding/gob"
 	"log"
+	"crypto/sha256"
 )
 
-// Block 由区块头和交易两部分构成
+// NewBlock 由区块头和交易两部分构成
 // Timestamp, PreviousBlockHash, Hash 属于区块头（block header）
 // Timestamp     : 当前时间戳，也就是区块创建的时间
 // PreviousBlockHash : 前一个块的哈希
@@ -16,20 +17,16 @@ import (
 // Data          : 区块实际存储的信息，比特币中也就是交易
 type Block struct {
 	Timestamp         int64
-	Data              []byte
+	Transactions      []*Transaction
 	PreviousBlockHash []byte
 	Hash              []byte
 	Nonce             int
 }
 
-// NewBlock 用于生成新块，参数需要 Data 与 PreviousBlockHash
+// 用于生成新块，参数需要 Data 与 PreviousBlockHash
 // 当前块的哈希会基于 Data 和 PreviousBlockHash 计算得到
-func NewBlock(data string, prevBlockHash []byte) *Block {
-	block := &Block{
-		Timestamp:         time.Now().Unix(),
-		PreviousBlockHash: prevBlockHash,
-		Hash:              []byte{},
-		Data:              []byte(data)}
+func NewBlock(transactions []*Transaction, prevBlockHash []byte) *Block {
+	block := &Block{time.Now().Unix(), transactions, prevBlockHash, []byte{}, 0}
 
 	pow := NewProofOfWork(block)
 	nonce, hash := pow.Run()
@@ -40,9 +37,9 @@ func NewBlock(data string, prevBlockHash []byte) *Block {
 	return block
 }
 
-// NewGenesisBlock 生成创世块
-func NewGenesisBlock() *Block {
-	return NewBlock("创世块", []byte{})
+// 生成创世块
+func NewGenesisBlock(coinbase *Transaction) *Block {
+	return NewBlock([]*Transaction{coinbase}, []byte{})
 }
 
 func (block *Block) Serialize() []byte {
@@ -63,4 +60,16 @@ func DeserializeBlock(data []byte) *Block {
 		log.Panic(err)
 	}
 	return &block
+}
+
+func (block *Block) HashTransactions() []byte {
+	var txHashes [][]byte
+	var txHash [32]byte
+
+	for _, tx := range block.Transactions {
+		txHashes = append(txHashes, tx.ID)
+	}
+	txHash = sha256.Sum256(bytes.Join(txHashes, []byte{}))
+
+	return txHash[:]
 }
