@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 )
 
 type CommandLine struct {
@@ -12,8 +13,10 @@ type CommandLine struct {
 
 const usage = `
 Usage:
-  print                   打印出区块链的所有区块
-  initblockchain -address ADDRESS - 初始化一个区块链并发放创世块奖励
+  print --- 打印出所有区块
+  getbalance -address ADDRESS --- 查询地址余额
+  initblockchain -address ADDRESS --- 初始化一个区块链并发放创世块奖励
+  send -from FROM -to TO -amount AMOUNT --- 从FROM向TO转AMOUNT金额的钱
 `
 
 func (commandLine *CommandLine) initBlockchain(address string) {
@@ -36,12 +39,28 @@ func (commandLine *CommandLine) validateArgs() {
 func (commandLine *CommandLine) Run() {
 	commandLine.validateArgs()
 
+	getBalanceCmd := flag.NewFlagSet("getbalance", flag.ExitOnError)
 	printChainCmd := flag.NewFlagSet("print", flag.ExitOnError)
 	initblockchainCmd := flag.NewFlagSet("initblockchain", flag.ExitOnError)
+	sendCmd := flag.NewFlagSet("send", flag.ExitOnError)
 
+	getBalanceAddress := getBalanceCmd.String("address", "", "要查询余额的地址")
 	initblockchainAddress := initblockchainCmd.String("address", "", "创世块奖励接受者的地址")
+	sendFrom := sendCmd.String("from", "", "转账放的地址")
+	sendTo := sendCmd.String("to", "", "接收方的地址")
+	sendAmount := sendCmd.Int("amount", 0, "转账金额")
 
 	switch os.Args[1] {
+	case "getbalance":
+		err := getBalanceCmd.Parse(os.Args[2:])
+		if err != nil {
+			log.Panic(err)
+		}
+	case "send":
+		err := sendCmd.Parse(os.Args[2:])
+		if err != nil {
+			log.Panic(err)
+		}
 	case "initblockchain":
 		err := initblockchainCmd.Parse(os.Args[2:])
 		if err != nil {
@@ -57,6 +76,14 @@ func (commandLine *CommandLine) Run() {
 		os.Exit(1)
 	}
 
+	if getBalanceCmd.Parsed() {
+		if *getBalanceAddress == "" {
+			getBalanceCmd.Usage()
+			os.Exit(1)
+		}
+		commandLine.getBalance(*getBalanceAddress)
+	}
+
 	if printChainCmd.Parsed() {
 		commandLine.PrintChain()
 	}
@@ -67,6 +94,15 @@ func (commandLine *CommandLine) Run() {
 			os.Exit(1)
 		}
 		commandLine.initBlockchain(*initblockchainAddress)
+	}
+
+	if sendCmd.Parsed() {
+		if *sendFrom == "" || *sendTo == "" || *sendAmount <= 0 {
+			sendCmd.Usage()
+			os.Exit(1)
+		}
+
+		commandLine.send(*sendFrom, *sendTo, *sendAmount)
 	}
 }
 
@@ -79,21 +115,37 @@ func (commandLine *CommandLine) send(from, to string, amount int) {
 	fmt.Println("转账成功!")
 }
 
+func (commandLine *CommandLine) getBalance(address string) {
+	blockchain := NewBlockchain()
+	defer blockchain.db.Close()
+
+	balance := 0
+	utxos := blockchain.FindUTXO(address)
+
+	for _, output := range utxos {
+		balance += output.Value
+	}
+
+	fmt.Printf("'%s'的余额为: %d\n", address, balance)
+}
+
 func (commandLine *CommandLine) PrintChain() {
-	/*	iterator := commandLine.blockchain.Iterator()
+	blockchain := NewBlockchain()
+	defer blockchain.db.Close()
 
-		for {
-			block := iterator.Next()
+	iterator := blockchain.Iterator()
 
-			fmt.Printf("前一块哈希: %x\n", block.PreviousBlockHash)
-			fmt.Printf("数据: %s\n", block.Transactions)
-			fmt.Printf("哈希: %x\n", block.Hash)
+	for {
+		block := iterator.Next()
 
-			pow := NewProofOfWork(block)
-			fmt.Printf("PoW验证结果: %s\n\n", strconv.FormatBool(pow.Validate()))
+		fmt.Printf("前一块哈希: %x\n", block.PreviousBlockHash)
+		fmt.Printf("哈希: %x\n", block.Hash)
 
-			if len(block.PreviousBlockHash) == 0 {
-				break
-			}
-		}*/
+		pow := NewProofOfWork(block)
+		fmt.Printf("PoW验证结果: %s\n\n", strconv.FormatBool(pow.Validate()))
+
+		if len(block.PreviousBlockHash) == 0 {
+			break
+		}
+	}
 }

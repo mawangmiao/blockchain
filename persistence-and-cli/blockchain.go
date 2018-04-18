@@ -122,7 +122,7 @@ func (blockchain *Blockchain) MineBlock(transactions []*Transaction) {
 			log.Panic(err)
 		}
 
-		err = bucket.Put([]byte(lastHash), newBlock.Hash)
+		err = bucket.Put([]byte(LAST_HASH), newBlock.Hash)
 		if err != nil {
 			log.Panic(err)
 		}
@@ -153,9 +153,27 @@ func (iterator *BlockchainIterator) Next() *Block {
 	return block
 }
 
-func (blockchain *Blockchain) FindSpendableOutputs(address string, account int) (int, map[string][]int) {
-	accumulated := 0
+func (blockchain *Blockchain) FindSpendableOutputs(address string, amount int) (int, map[string][]int) {
 	unspentOutputs := make(map[string][]int)
+	unspentTransactions := blockchain.FindUnspentTransactions(address)
+	accumulated := 0
+
+Work:
+	for _, transaction := range unspentTransactions {
+		transactionID := hex.EncodeToString(transaction.ID)
+
+		for index, output := range transaction.Outputs {
+			if output.CanBeUnlockedWith(address) && accumulated < amount {
+				accumulated += output.Value
+				unspentOutputs[transactionID] = append(unspentOutputs[transactionID], index)
+
+				if accumulated >= amount {
+					break Work
+				}
+			}
+		}
+	}
+
 	return accumulated, unspentOutputs
 }
 
@@ -168,14 +186,14 @@ func (blockchain *Blockchain) FindUnspentTransactions(address string) []Transact
 		block := iterator.Next() //从最后一个区块, 从上往下遍历. 所以最后一块包含的输出肯定没花过??
 
 		for _, transaction := range block.Transactions {
-			encodedTransactionID := hex.EncodeToString(transaction.ID)
+			transactionID := hex.EncodeToString(transaction.ID)
 
 			//先看下当前交易中哪些输出可以被address花
 		Outputs:
 			for index, output := range transaction.Outputs {
 				//首先检查当前输出是否已经花掉了
-				if mapSpentTransactionOutputIndex[encodedTransactionID] != nil {
-					for _, spentOutputIndex := range mapSpentTransactionOutputIndex[encodedTransactionID] {
+				if mapSpentTransactionOutputIndex[transactionID] != nil {
+					for _, spentOutputIndex := range mapSpentTransactionOutputIndex[transactionID] {
 						if spentOutputIndex == index { //当前outputIndex出现在已花费的outputIndex数组中, 所以当前输出已经被花掉
 							continue Outputs
 						}
@@ -192,8 +210,8 @@ func (blockchain *Blockchain) FindUnspentTransactions(address string) []Transact
 			if transaction.IsCoinbaseTransaction() == false {
 				for _, input := range transaction.Inputs {
 					if input.CanUnlockOutputWith(address) { //谁有权解锁该输入, 就说明这笔钱已经被谁花掉了
-						encodedPreviousTransactionID := hex.EncodeToString(input.PreviousTransactionID)
-						mapSpentTransactionOutputIndex[encodedPreviousTransactionID] = append(mapSpentTransactionOutputIndex[encodedPreviousTransactionID], input.OutputIndexInPreviousTransaction)
+						previousTransactionID := hex.EncodeToString(input.PreviousTransactionID)
+						mapSpentTransactionOutputIndex[previousTransactionID] = append(mapSpentTransactionOutputIndex[previousTransactionID], input.OutputIndexInPreviousTransaction)
 					}
 				}
 			}
@@ -205,4 +223,19 @@ func (blockchain *Blockchain) FindUnspentTransactions(address string) []Transact
 		}
 	}
 	return unspentTransactions
+}
+
+func (blockchain *Blockchain) FindUTXO(address string) []TransactionOutput {
+	var utxos []TransactionOutput
+	unspentTransactions := blockchain.FindUnspentTransactions(address)
+
+	for _, transaction := range unspentTransactions {
+		for _, output := range transaction.Outputs {
+			if output.CanBeUnlockedWith(address) {
+				utxos = append(utxos, output)
+			}
+		}
+	}
+
+	return utxos
 }

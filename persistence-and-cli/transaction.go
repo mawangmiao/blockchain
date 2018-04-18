@@ -8,8 +8,8 @@ import (
 	"encoding/hex"
 )
 
-const coinbaseDefaultOutputIndex = -1
-const subsidy = 10
+const COINBASE_DEFAULT_OUTPUT_INDEX = -1
+const SUBSIDY = 10
 
 type TransactionInput struct {
 	PreviousTransactionID            []byte
@@ -29,15 +29,15 @@ type Transaction struct {
 }
 
 func (transaction Transaction) IsCoinbaseTransaction() bool {
-	return len(transaction.Inputs) == 1 && len(transaction.Inputs[0].PreviousTransactionID) == 0 && transaction.Inputs[0].OutputIndexInPreviousTransaction == coinbaseDefaultOutputIndex
+	return len(transaction.Inputs) == 1 && len(transaction.Inputs[0].PreviousTransactionID) == 0 && transaction.Inputs[0].OutputIndexInPreviousTransaction == COINBASE_DEFAULT_OUTPUT_INDEX
 }
 
 func CreateCoinbaseTransaction(to, data string) *Transaction {
 	if data == "" {
 		data = "奖励给 " + to
 	}
-	transactionInput := TransactionInput{[]byte{}, coinbaseDefaultOutputIndex, data}
-	transactionOutput := TransactionOutput{subsidy, to}
+	transactionInput := TransactionInput{[]byte{}, COINBASE_DEFAULT_OUTPUT_INDEX, data}
+	transactionOutput := TransactionOutput{SUBSIDY, to}
 	transaction := Transaction{nil, []TransactionInput{transactionInput}, []TransactionOutput{transactionOutput}}
 	transaction.SetID()
 	return &transaction
