@@ -9,7 +9,7 @@ import (
 )
 
 const COINBASE_DEFAULT_OUTPUT_INDEX = -1
-const SUBSIDY = 10
+const SUBSIDY = 50
 
 type TransactionInput struct {
 	PreviousTransactionID            []byte
